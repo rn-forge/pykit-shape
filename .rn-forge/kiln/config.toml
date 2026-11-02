@@ -1,0 +1,66 @@
+# The one hand-authored input kiln reads (kiln ADR-0004). Edit this, then run
+# `kiln apply`. Everything else under .rn-forge/kiln/ is kiln's.
+schema_version = 1
+
+[repository]
+name = "pykit-shape"
+archetype = "python-lib"
+lifecycle = false
+
+[kiln]
+ref = "feature/v1"
+
+[archetype]
+
+[archetype.python-lib]
+packages = [
+    "packages/rn-forge-auth",
+    "packages/rn-forge-cli",
+    "packages/rn-forge-commons",
+    "packages/rn-forge-data",
+    "packages/rn-forge-devops",
+    "packages/rn-forge-django",
+    "packages/rn-forge-fastapi",
+    "packages/rn-forge-sqlalchemy",
+    "packages/rn-forge-tooling",
+    "packages/rn-forge-web",
+]
+import_contracts = "own"
+
+[archetype.python-lib.modules]
+"packages/rn-forge-auth" = "rn_forge.auth"
+"packages/rn-forge-cli" = "rn_forge.cli"
+"packages/rn-forge-commons" = "rn_forge.commons"
+"packages/rn-forge-data" = "rn_forge.data"
+"packages/rn-forge-devops" = "rn_forge.devops"
+"packages/rn-forge-django" = "rn_forge.django"
+"packages/rn-forge-fastapi" = "rn_forge.fastapi"
+"packages/rn-forge-sqlalchemy" = "rn_forge.sqlalchemy"
+"packages/rn-forge-tooling" = "rn_forge.tooling"
+"packages/rn-forge-web" = "rn_forge.web"
+[docs]
+profile = "mkdocs"
+site_dir = ".docs-site"
+external_url = ""
+
+[tasks]
+includes = []
+
+[tasks.extra_refs]
+
+[tasks.command_overrides]
+
+[tasks.audit]
+ignore = []
+
+[ci]
+provider = "github"
+sonar = true
+doctor_full = "default-branch"
+sonar_exclusions = []
+sonar_coverage_exclusions = []
+jobs = []
+
+[ci.hooks]
+setup = []
+docs = []

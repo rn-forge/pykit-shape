@@ -1,0 +1,186 @@
+"""Strict Jinja2 rendering from filesystem or package templates."""
+
+from __future__ import annotations
+
+import functools
+from collections.abc import Mapping
+from typing import Any
+
+import jinja2
+from rn_forge.commons.exceptions import AppException
+from rn_forge.commons.fs.documents import ConfigFormat, DocumentUtils
+
+__all__ = ["RenderError", "TemplateEngine"]
+
+
+class RenderError(AppException):
+    """A template could not be loaded, compiled, or rendered."""
+
+
+class TemplateEngine:
+    """Render templates from a directory or a package, with strict undefined handling."""
+
+    def __init__(
+        self,
+        *,
+        directory: str | None = None,
+        package: str | None = None,
+        package_path: str = "templates",
+        strict: bool = True,
+        autoescape: bool = False,
+        **environment_kwargs: Any,
+    ) -> None:
+        """Initialize :class:`TemplateEngine`.
+
+        Exactly one of *directory* or *package* must be given.
+
+        Args:
+            directory: A filesystem directory of templates
+                (``jinja2.FileSystemLoader``).
+            package: A Python package name whose ``package_path`` subdirectory
+                holds templates (``jinja2.PackageLoader``) — the resource
+                loads even when the package is installed as a zipped wheel.
+            package_path: Subdirectory within *package* holding templates.
+                Only meaningful with *package*.
+            strict: Use ``jinja2.StrictUndefined`` (default) so referencing an
+                undefined variable raises instead of rendering empty.
+            autoescape: HTML-escape every rendered value. Enable it when the
+                output is HTML.
+            **environment_kwargs: Forwarded to the ``jinja2.Environment``
+                constructor (e.g. ``trim_blocks``, ``lstrip_blocks``).
+                ``keep_trailing_newline=True`` is the default unless
+                overridden here.
+
+        Raises:
+            ValueError: Both or neither of *directory*/*package* are given.
+        """
+        if (directory is None) == (package is None):
+            raise ValueError("Exactly one of directory or package must be given")
+
+        loader: jinja2.BaseLoader = (
+            jinja2.FileSystemLoader(directory)
+            if directory is not None
+            else jinja2.PackageLoader(package, package_path)  # type: ignore[arg-type]
+        )
+        environment_kwargs.setdefault("keep_trailing_newline", True)
+        self._environment = jinja2.Environment(
+            loader=loader,
+            undefined=jinja2.StrictUndefined if strict else jinja2.Undefined,
+            autoescape=autoescape,  # noqa: S701  # caller opts in; default is off for non-HTML output
+            **environment_kwargs,
+        )
+
+        def to_toml(value: Mapping[str, Any]) -> str:
+            return DocumentUtils.dumps(value, ConfigFormat.TOML)
+
+        def to_yaml(value: Mapping[str, Any]) -> str:
+            return DocumentUtils.dumps(value, ConfigFormat.YAML)
+
+        self._environment.filters["to_toml"] = to_toml
+        self._environment.filters["to_yaml"] = to_yaml
+
+    @classmethod
+    def cached(
+        cls,
+        *,
+        directory: str | None = None,
+        package: str | None = None,
+        package_path: str = "templates",
+        strict: bool = True,
+        autoescape: bool = False,
+        **environment_kwargs: Any,
+    ) -> TemplateEngine:
+        """Return the engine already built in this process for equal arguments.
+
+        The engine is built on first use, so each template compiles once per
+        process. It is shared: do not mutate its :attr:`environment`. Every
+        argument must be hashable.
+
+        Args:
+            directory: As for the constructor.
+            package: As for the constructor.
+            package_path: As for the constructor.
+            strict: As for the constructor.
+            autoescape: As for the constructor.
+            **environment_kwargs: As for the constructor.
+
+        Returns:
+            The shared engine for these arguments.
+
+        Raises:
+            ValueError: Both or neither of *directory*/*package* are given.
+        """
+        return _cached_engine(
+            cls,
+            directory,
+            package,
+            package_path,
+            strict,
+            autoescape,
+            tuple(sorted(environment_kwargs.items())),
+        )
+
+    @property
+    def environment(self) -> jinja2.Environment:
+        """The underlying ``jinja2.Environment`` — the escape hatch."""
+        return self._environment
+
+    def render_string(self, template: str, context: Mapping[str, Any]) -> str:
+        """Render an inline template string.
+
+        Raises:
+            RenderError: The template cannot be compiled or evaluated.
+        """
+        try:
+            return self._environment.from_string(template).render(**context)
+        except jinja2.TemplateError as exc:
+            raise RenderError("{}", exc) from exc
+
+    def render(self, name: str, context: Mapping[str, Any]) -> str:
+        """Render a named template from the configured directory or package.
+
+        Raises:
+            RenderError: The template cannot be loaded, compiled, or evaluated.
+        """
+        try:
+            return self._environment.get_template(name).render(**context)
+        except jinja2.TemplateError as exc:
+            raise RenderError("{}", exc) from exc
+
+    def validate(self) -> list[str]:
+        """Compile every template visible to the loader; return error messages.
+
+        Returns ``[]`` (rather than raising ``TypeError``) for an environment
+        whose loader does not support listing templates.
+        """
+        errors: list[str] = []
+        try:
+            names = self._environment.list_templates()
+        except TypeError:
+            return errors
+        for name in names:
+            try:
+                self._environment.get_template(name)
+            except jinja2.TemplateError as exc:
+                errors.append(f"{name}: {exc}")
+        return errors
+
+
+@functools.cache
+def _cached_engine(
+    cls: type[TemplateEngine],
+    directory: str | None,
+    package: str | None,
+    package_path: str,
+    strict: bool,
+    autoescape: bool,
+    environment_items: tuple[tuple[str, Any], ...],
+) -> TemplateEngine:
+    return cls(
+        directory=directory,
+        package=package,
+        package_path=package_path,
+        strict=strict,
+        autoescape=autoescape,
+        **dict(environment_items),
+    )
