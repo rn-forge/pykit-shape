@@ -69,7 +69,7 @@ dev = [
     # The guide examples, which the tests run, import rn-forge-auth.
     "rn-forge-auth>=0.1.0,<0.2",
     "rn-forge-web[security]",
-    "ruff>=0.15.21",
+    "ruff>=0.17.2",
 ]
 docs = [
     "mkdocs>=1.6.1",
